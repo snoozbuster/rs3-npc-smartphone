@@ -1,0 +1,9 @@
+{
+  "name": "NPC Smartphone",
+  "version": "0.0.1",
+  "contactEmailAddress": "snoozbuster@outlook.com",
+  "requiredDependencies": {},
+  "optionalDependencies": {},
+  "requiredPermissions": [],
+  "optionalPermissions": []
+}
