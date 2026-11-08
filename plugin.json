@@ -1,8 +1,12 @@
 {
   "name": "NPC Smartphone",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "contactEmailAddress": "snoozbuster@outlook.com",
-  "requiredDependencies": {},
+  "hasSettingsIcon": true,
+  "hasRibbonIcon": true,
+  "requiredDependencies": {
+    "prettyui": 6398181
+  },
   "optionalDependencies": {},
   "requiredPermissions": [],
   "optionalPermissions": []
