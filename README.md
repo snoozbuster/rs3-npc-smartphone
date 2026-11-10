@@ -42,6 +42,9 @@ should sit next to that.
 ## Load / reload in the client
 
 1. Log into the **beta** world (import save from the lobby if needed).
+
+- [Open beta](jagex:launch=runescape,args=[configURI=rs-launch://www.runescape.com/jav_config_beta.ws])
+
 2. Open the client console: **Alt + `** (key under Esc).
 3. Refresh the plugin list if you just created the folder:
 
