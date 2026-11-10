@@ -36,7 +36,8 @@ end
 PersistentDB:SetBool(SETTING_HIDE_CHATHEADS, hideChatheads)
 
 -- Compact-layout feature flags (only applied when hideChatheads is on).
--- Note: MODELs are also the Speak-to click targets; hiding them removes Speak-to.
+-- MODELs are the Speak-to click targets: keep them unhidden, clear their visuals,
+-- and move/resize them onto the packed labels so names stay clickable.
 -- Scrollbar gutter is static=3 (from scaffold). Do not heuristic-hide static=8 borders.
 local COLLAPSE_LABELS = true
 local CLAMP_SCROLL_SIZE = true
@@ -81,7 +82,8 @@ local refreshPending = false
 local refreshWaitTicks = 0
 local REFRESH_MAX_WAIT_TICKS = 60 -- ~ interface populate timeout
 local uiExperimentApplied = false
-local chatheadsHidden = false
+local chatheadsHidden = false -- true while anti-flash has the MODEL layer suppressed
+local speakTargetsAligned = false -- true after Speak-to MODELs overlay packed labels
 local lastCompact = nil -- { baseY, rowH, rows, contentBottom, sampleLabel }
 local layoutBackup = nil -- vanilla geometry captured before compacting
 local labelsSuppressed = false
@@ -329,29 +331,39 @@ local function unhideContactChatheadLayer()
   return shown
 end
 
---- Hide each contact MODEL (static=1). Labels (static=2) stay visible after pack.
-local function hideContactChatheads()
-  local hiddenCount = hideContactChatheadLayer()
-  local failCount = 0
-  for _, slot in ipairs(contacts) do
-    local button = getContactButton(slot.dyn)
-    if button == nil then
-      failCount = failCount + 1
-    elseif setComponentHidden(button, true) then
-      hiddenCount = hiddenCount + 1
-    else
-      failCount = failCount + 1
-    end
+--- Clear the MODEL visual without hiding the component (keeps Speak-to clickable).
+local function clearSpeakToModelVisual(button)
+  if button == nil then
+    return false
   end
+  local ok = pcall(function()
+    button:SetModel(ui.ModelType.NONE, 0)
+  end)
+  if not ok then
+    ok = pcall(function()
+      button.alpha = 0
+    end)
+  end
+  return ok
+end
 
-  chatheadsHidden = hiddenCount > 0
-  logf(
-    "hide chatheads: hidden=%d fail=%d (labels remain at static=%d)",
-    hiddenCount,
-    failCount,
-    CONTACT_LABEL_STATIC
-  )
-  return hiddenCount
+local function restoreSpeakToModelVisual(button, entry)
+  if button == nil or entry == nil then
+    return false
+  end
+  local ok = pcall(function()
+    if entry.modelType ~= nil and entry.modelID1 ~= nil then
+      if entry.modelID2 ~= nil then
+        button:SetModel(entry.modelType, entry.modelID1, entry.modelID2)
+      else
+        button:SetModel(entry.modelType, entry.modelID1)
+      end
+    end
+    if entry.alpha ~= nil then
+      button.alpha = entry.alpha
+    end
+  end)
+  return ok
 end
 
 local function setContactLabelsHidden(hidden)
@@ -412,6 +424,7 @@ local function captureLayoutBackup()
 
   local backup = {
     labels = {},
+    buttons = {},
     sizes = {},
     scrolls = {},
   }
@@ -430,6 +443,28 @@ local function captureLayoutBackup()
           y = y,
           w = w or 80,
           h = h or 16,
+          clickthrough = safeProp(label, "clickthrough"),
+        }
+      end
+    end
+
+    local button = getContactButton(slot.dyn)
+    if button ~= nil then
+      local x = safeProp(button, "x")
+      local y = safeProp(button, "y")
+      local w = safeProp(button, "width")
+      local h = safeProp(button, "height")
+      if x ~= nil and y ~= nil then
+        backup.buttons[#backup.buttons + 1] = {
+          dyn = slot.dyn,
+          x = x,
+          y = y,
+          w = w or 80,
+          h = h or 80,
+          modelType = safeProp(button, "modelType"),
+          modelID1 = safeProp(button, "modelID1"),
+          modelID2 = safeProp(button, "modelID2"),
+          alpha = safeProp(button, "alpha"),
         }
       end
     end
@@ -478,13 +513,20 @@ local function captureLayoutBackup()
     scrollCount = scrollCount + 1
   end
   layoutBackup = backup
-  logf("layout backup: labels=%d sizes=%d scrolls=%d", #backup.labels, sizeCount, scrollCount)
+  logf(
+    "layout backup: labels=%d buttons=%d sizes=%d scrolls=%d",
+    #backup.labels,
+    #backup.buttons,
+    sizeCount,
+    scrollCount
+  )
   return backup
 end
 
 local function restoreVanillaContactLayout()
   local backup = layoutBackup
   local restoredLabels = 0
+  local restoredButtons = 0
   local restoredSizes = 0
   local restoredScrolls = 0
 
@@ -495,9 +537,26 @@ local function restoreVanillaContactLayout()
         local ok = pcall(function()
           label:SetSize(entry.w, entry.h)
           label:SetPos(entry.x, entry.y)
+          if entry.clickthrough ~= nil then
+            label.clickthrough = entry.clickthrough
+          end
         end)
         if ok then
           restoredLabels = restoredLabels + 1
+        end
+      end
+    end
+
+    for _, entry in ipairs(backup.buttons or {}) do
+      local button = getContactButton(entry.dyn)
+      if button ~= nil then
+        local ok = pcall(function()
+          button:SetSize(entry.w, entry.h)
+          button:SetPos(entry.x, entry.y)
+        end)
+        if ok then
+          restoreSpeakToModelVisual(button, entry)
+          restoredButtons = restoredButtons + 1
         end
       end
     end
@@ -541,13 +600,33 @@ local function restoreVanillaContactLayout()
   end
   setContactLabelsHidden(false)
 
+  -- Compact mode MoveToFront'd the Speak-to layer over labels; put names back on top.
+  local labelLayer = getStaticComponent(CONTACT_LABEL_STATIC)
+  if labelLayer ~= nil then
+    pcall(function()
+      labelLayer:MoveToFront()
+    end)
+  end
+  if backup ~= nil then
+    for _, entry in ipairs(backup.labels) do
+      local label = getContactLabelComponent(entry.dyn)
+      if label ~= nil then
+        pcall(function()
+          label:MoveToFront()
+        end)
+      end
+    end
+  end
+
   clearLayoutBackup()
   lastCompact = nil
   chatheadsHidden = false
+  speakTargetsAligned = false
   labelsSuppressed = false
   logf(
-    "restored vanilla: labels=%d sizes=%d scrolls=%d heads=%d",
+    "restored vanilla: labels=%d buttons=%d sizes=%d scrolls=%d heads=%d",
     restoredLabels,
+    restoredButtons,
     restoredSizes,
     restoredScrolls,
     shownHeads
@@ -667,7 +746,7 @@ local function dumpContactScaffold()
 end
 
 --- Pack name labels into a denser grid using the original column X positions.
---- Leaves MODEL components untouched (guidelines: don't move 3D click zones).
+--- Speak-to MODELs are aligned onto these cells afterwards (see alignSpeakToHitboxesToLabels).
 local function collapseContactLabels()
   lastCompact = nil
   if not COLLAPSE_LABELS or #contacts == 0 then
@@ -738,6 +817,8 @@ local function collapseContactLabels()
       -- Shrink the tall chathead-sized label cell so text packs tightly.
       entry.component:SetSize(entry.w, rowH)
       entry.component:SetPos(x, y)
+      -- Let clicks reach the Speak-to MODEL that will overlay this cell.
+      entry.component.clickthrough = true
     end)
     if ok then
       moved = moved + 1
@@ -758,6 +839,66 @@ local function collapseContactLabels()
   }
 
   logf("collapse labels: moved=%d fail=%d", moved, failCount)
+  return moved
+end
+
+--- Keep Speak-to MODELs unhidden (action stays bound), clear their chathead visuals,
+--- and move/resize each onto its packed name label so clicking a name contacts the NPC.
+local function alignSpeakToHitboxesToLabels()
+  local shown = unhideContactChatheadLayer()
+  local buttonLayer = getStaticComponent(CONTACT_BUTTON_STATIC)
+  if buttonLayer ~= nil then
+    pcall(function()
+      buttonLayer:MoveToFront()
+    end)
+  end
+
+  local moved = 0
+  local cleared = 0
+  local failCount = 0
+
+  for _, slot in ipairs(contacts) do
+    local label = getContactLabelComponent(slot.dyn)
+    local button = getContactButton(slot.dyn)
+    if label == nil or button == nil then
+      failCount = failCount + 1
+    else
+      local x = safeProp(label, "x")
+      local y = safeProp(label, "y")
+      local w = safeProp(label, "width")
+      local h = safeProp(label, "height")
+      if x == nil or y == nil then
+        failCount = failCount + 1
+      else
+        setComponentHidden(button, false)
+        if clearSpeakToModelVisual(button) then
+          cleared = cleared + 1
+        end
+        local ok, err = pcall(function()
+          button:SetSize(w or 80, h or COMPACT_ROW_HEIGHT)
+          button:SetPos(x, y)
+          button:MoveToFront()
+        end)
+        if ok then
+          moved = moved + 1
+        else
+          failCount = failCount + 1
+          if failCount <= 3 then
+            logf("align speak-to dyn=%s failed: %s", tostring(slot.dyn), tostring(err))
+          end
+        end
+      end
+    end
+  end
+
+  speakTargetsAligned = moved > 0
+  logf(
+    "align speak-to: moved=%d cleared=%d shown=%d fail=%d",
+    moved,
+    cleared,
+    shown,
+    failCount
+  )
   return moved
 end
 
@@ -998,13 +1139,14 @@ local function applyContactUiExperiment()
     logf("hide chatheads off — leaving vanilla picker")
     uiExperimentApplied = true
     labelsSuppressed = false
+    speakTargetsAligned = false
     return
   end
 
   captureLayoutBackup()
   dumpContactScaffold()
-  hideContactChatheads()
   collapseContactLabels()
+  alignSpeakToHitboxesToLabels()
   clampContactScrollSize()
   fitContactWindowToContent()
   local sbHidden = hideContactScrollbarSprites()
@@ -1131,6 +1273,7 @@ local function onContactOpened()
   refreshWaitTicks = 0
   uiExperimentApplied = false
   chatheadsHidden = false
+  speakTargetsAligned = false
   labelsSuppressed = false
   lastCompact = nil
   clearLayoutBackup()
@@ -1144,6 +1287,7 @@ local function onContactClosed()
   refreshWaitTicks = 0
   uiExperimentApplied = false
   chatheadsHidden = false
+  speakTargetsAligned = false
   labelsSuppressed = false
   lastCompact = nil
   clearLayoutBackup()
@@ -1326,7 +1470,7 @@ function PluginShutdown()
 end
 
 logf(
-  "loaded v0.0.20 layout=88/{speak:static1,name:static2} hideChatheads=%s collapse=%s clampScroll=%s hideSb=%s fit=%s spell=%s/%s/%s/%s",
+  "loaded v0.0.22 layout=88/{speak:static1,name:static2} hideChatheads=%s collapse=%s clampScroll=%s hideSb=%s fit=%s spell=%s/%s/%s/%s",
   tostring(hideChatheads),
   tostring(COLLAPSE_LABELS),
   tostring(CLAMP_SCROLL_SIZE),

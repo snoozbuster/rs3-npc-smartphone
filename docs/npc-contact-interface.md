@@ -98,9 +98,10 @@ Grid layout with stock chatheads (beta capture):
 | Row pitch | ~125 |
 | First label `baseY` | ~15 |
 
-Hiding MODELs does **not** collapse the grid. Labels stay in chathead-sized
-cells until repositioned / resized. A names-only pitch around ~22 worked in
-testing.
+Clearing MODEL visuals does **not** collapse the grid. Labels stay in
+chathead-sized cells until repositioned / resized. A names-only pitch around
+~22 worked in testing. After packing, Speak-to MODELs are unhidden, visually
+cleared, and moved onto those label cells so names remain clickable.
 
 ### Scrollbar (`static=3`)
 
@@ -196,15 +197,21 @@ model type / NPC id were not dumped in the discovery pass.
 1. Shell appears: `static=0` gets real width/height (still may have no slots).
 2. Dynamic contacts spawn over subsequent Logic ticks.
 3. Stock layout: tall content (~750) inside shorter viewport (~284) ⇒ scrollbar.
-4. For a names-only experiment we:
+4. For a names-only layout we:
    - hide `static=1` (layer + MODELs) immediately to avoid a chathead flash
    - hide `static=3` gutter (+ children); refresh while open
-   - pack `static=2` labels into a dense 5-column grid
+   - pack `static=2` labels into a dense 5-column grid (labels `clickthrough`)
+   - unhide Speak-to MODELs, clear visuals, move/resize onto those labels
    - shrink content hosts `1`/`2` and fit frame statics `0,3,4–8` by one shared
      height delta (snapshot sizes first to avoid double-shrink)
    - clamp `static=0` scroll region and `SetScrollPos(0, 0)`
+   - on toggle-off, restore MODEL geometry/visuals and `MoveToFront` labels
+     (`static=2`) so chatheads don’t stay stacked above names
 
 Shortening the real layers also removes the old tall click-intercept region.
+Speak-to stays on the stock MODEL ops; only position/visibility of those
+components change. `hidden=true` on Speak-to MODELs removes the call action —
+clear visuals instead.
 
 ## Plugin-facing recipe
 
@@ -214,11 +221,12 @@ Shortening the real layers also removes the old tall click-intercept region.
 3. When slots are ready, iterate `dyn = 0 ..` until several consecutive misses:
    - name from `GetComponent(88, 2, 0, dyn)`
    - Speak-to from `GetComponent(88, 1, 0, dyn).opConfig`
-4. Optionally reshape stock UI (pack / fit / hide scrollbar) and/or build search
-   / favorites as a plugin overlay on
-   `TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP`.
-5. Keep the player’s Speak-to click as the action that contacts the NPC; do not
-   move MODEL click zones to fake a new list control.
+4. Reshape stock UI: pack labels, overlay cleared Speak-to MODELs on those
+   cells, fit / hide scrollbar; and/or build search / favorites as a plugin
+   overlay on `TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP`.
+5. Keep Speak-to on the stock MODEL components (no op rebinding). Making those
+   MODELs invisible and aligning them to labels is the allowed way to keep
+   names clickable when chatheads are hidden.
 
 ## Related docs
 

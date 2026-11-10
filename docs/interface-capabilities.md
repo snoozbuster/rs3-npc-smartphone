@@ -75,12 +75,15 @@ From the [plugin guidelines](https://developer.runescape.com/rs/submission/guide
 - Unhiding components the game has hidden
 - Auto-performing actions / synthesizing server ops
 - New MiniMenu entries that send server actions
-- Moving/resizing **3D component click zones** to invent unfair hit targets
+- Rebinding a server action from one menu option onto another
+- Moving/resizing click zones for **in-world** 3D objects (moderator guidance:
+  the published “3D component click zones” line is about the game world, not
+  interface MODELs)
 
-For NPC Contact that means: hiding chathead MODELs and packing LABELs for
-display is fine; do not relocate MODEL Speak-to hitboxes as a fake list
-control. Prefer a plugin overlay for new clickable UI, and keep Speak-to as the
-player’s real action on the stock targets (or a clearly allowed alternative).
+For NPC Contact that means: packing LABELs for display is fine, and Speak-to
+MODELs may be kept unhidden, visually cleared (`SetModel(NONE)` / alpha), and
+moved/resized onto those labels so the stock Speak-to action stays bound while
+names are the clickable surface. Do not copy Speak-to onto the LABEL ops.
 
 ## Patterns that worked
 
@@ -98,7 +101,13 @@ player’s real action on the stock targets (or a clearly allowed alternative).
 3. Use a text-sized row pitch (label cells were ~95px tall / ~125px pitch with
    chatheads; ~22px worked for names-only).
 4. `SetSize` each label to the new row height, then `SetPos` into the dense grid.
-5. Leave MODEL components hidden; do not move their click zones.
+5. Unhide Speak-to MODELs, clear their visuals, `SetSize`/`SetPos` them onto the
+   packed labels, and `MoveToFront` so names stay clickable via stock Speak-to.
+6. Set packed labels `clickthrough = true` so they don’t eat hits meant for the
+   overlayed Speak-to MODELs.
+7. When restoring vanilla: put geometry/models back **and**
+   `MoveToFront` the label layer (`static=2`) again. Compact mode’s
+   `MoveToFront` on Speak-to otherwise leaves names drawn behind chatheads.
 
 ### Fit the window to content
 
