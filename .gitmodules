@@ -1,0 +1,3 @@
+[submodule "types/rs"]
+	path = types/rs
+	url = https://github.com/FriendlyDevelopment/runescape-api-stubs.git

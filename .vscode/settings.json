@@ -1,8 +1,4 @@
 {
-  "Lua.workspace.library": [
-    "${workspaceFolder}/types/busted",
-    "${workspaceFolder}/types/luassert"
-  ],
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.expand": false,
   "explorer.fileNesting.patterns": {

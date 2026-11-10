@@ -91,6 +91,30 @@ Run tests:
 
 Specs live next to sources as `src/*_spec.lua` (excluded from deploy).
 
+## Editor types
+
+LuaLS stubs live under `types/`:
+
+| Path | Contents |
+|------|----------|
+| `types/rs/` | Git submodule: [FriendlyDevelopment/runescape-api-stubs](https://github.com/FriendlyDevelopment/runescape-api-stubs) (official RS plugin API) |
+| `types/overrides.lua` | Local LuaLS alias fix on top of the submodule |
+| `types/prettyui/` | Synthesized stubs for the PrettyUI dependency ([docs](https://prettyui.j3.gg/)) |
+| `types/busted`, `types/luassert` | Test framework stubs |
+
+After clone:
+
+```bash
+git submodule update --init --recursive
+```
+
+`.luarc.json` points `workspace.library` at `types/rs/types.lua` + `types/rs/generated` (not the optional `consts/`, which slows LuaLS). To bump the stubs:
+
+```bash
+git -C types/rs pull origin main
+git add types/rs
+```
+
 ## Quick smoke test
 
 1. `./scripts/deploy.sh` then `prl npc-smartphone` (or `pon` the first time).
