@@ -5,6 +5,8 @@
 | Doc                                                              | What it covers                                      |
 | ---------------------------------------------------------------- | --------------------------------------------------- |
 | [README.md](README.md)                                           | Setup, deploy, load/reload, test/lint, editor types |
+| [docs/architecture.md](docs/architecture.md)                     | Maintainability, UI pipeline, lib/plugin split      |
+| [docs/features.md](docs/features.md)                             | Product features / roadmap                          |
 | [docs/npc-contact-interface.md](docs/npc-contact-interface.md)   | iface `88` / spellbook schema                       |
 | [docs/interface-capabilities.md](docs/interface-capabilities.md) | What plugins can read/mutate in stock UI            |
 | [types/rs/README.md](types/rs/README.md)                         | Official RS plugin API stubs (submodule)            |

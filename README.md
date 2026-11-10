@@ -6,6 +6,8 @@ clearer UX). Development targets the official RuneScape plugin beta client
 
 Docs:
 
+- [`docs/architecture.md`](docs/architecture.md) — maintainability, UI pipeline, lib/plugin split
+- [`docs/features.md`](docs/features.md) — product features / roadmap
 - [`docs/npc-contact-interface.md`](docs/npc-contact-interface.md) — iface `88` / spellbook schema
 - [`docs/interface-capabilities.md`](docs/interface-capabilities.md) — what we can mutate in stock UI
 
