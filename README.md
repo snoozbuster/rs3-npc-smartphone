@@ -22,18 +22,17 @@ Default destination:
 `/mnt/c/ProgramData/Jagex/RuneScape-BETA/dev_plugins/npc-smartphone`
 
 ```bash
-./deploy.sh          # one-shot copy
-./deploy.sh --watch  # re-copy on save (needs: sudo apt install inotify-tools)
+./scripts/deploy.sh          # one-shot copy
+./scripts/deploy.sh --watch  # re-copy on save (needs: sudo apt install inotify-tools)
 ```
 
 Override the parent folder if needed:
 
 ```bash
-RS3_DEV_PLUGINS=/mnt/c/path/to/RuneScape-BETA/dev_plugins ./deploy.sh
+RS3_DEV_PLUGINS=/mnt/c/path/to/RuneScape-BETA/dev_plugins ./scripts/deploy.sh
 ```
 
-`deploy.sh` skips `.git`, markdown, and itself — only plugin runtime files are
-copied.
+`scripts/deploy.sh` rsyncs `src/` (excluding `*_spec.lua`) plus root `plugin.json` into that folder.
 
 Confirm the beta cache root while the client is loading (cog icon on the load
 window). You want the folder that contains `*.jcache` files; `dev_plugins`
@@ -76,9 +75,25 @@ Other useful commands:
 
 Console output from the plugin is prefixed with `[npc-smartphone]`.
 
+## Unit tests
+
+First-time setup (project-local Lua 5.4.8 + busted via micromamba):
+
+```bash
+./scripts/setup-busted.sh
+```
+
+Run tests:
+
+```bash
+./scripts/test.sh
+```
+
+Specs live next to sources as `src/*_spec.lua` (excluded from deploy).
+
 ## Quick smoke test
 
-1. `./deploy.sh` then `prl npc-smartphone` (or `pon` the first time).
+1. `./scripts/deploy.sh` then `prl npc-smartphone` (or `pon` the first time).
 2. Switch to the Lunar spellbook and cast **NPC Contact**.
 3. Console should log `contact iface 88 OPEN` and a `contacts (29):` dump.
 4. **F9** re-prints the contact list while the picker is open.

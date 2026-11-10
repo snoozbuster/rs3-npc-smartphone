@@ -1,0 +1,6 @@
+.luaenv/
+.mamba/
+.hererocks/
+.lua/
+luacov.*.out
+*.rock

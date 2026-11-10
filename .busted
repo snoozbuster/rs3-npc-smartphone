@@ -1,0 +1,7 @@
+return {
+  default = {
+    verbose = true,
+    ["auto-insulate"] = true,
+    lpath = "./src/?.lua;./src/?/init.lua",
+  },
+}

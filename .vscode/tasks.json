@@ -6,10 +6,20 @@
     {
       "label": "deploy --watch",
       "type": "shell",
-      "command": "${workspaceFolder}/deploy.sh --watch",
+      "command": "${workspaceFolder}/scripts/deploy.sh --watch",
       "problemMatcher": [],
       "group": {
         "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/test.sh",
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
         "isDefault": true
       }
     }
