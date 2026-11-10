@@ -5,7 +5,7 @@ std = "rs"
 
 exclude = [
   "types/**",
-  "src/*_spec.lua",
+  "src/**/*_spec.lua",
   ".luaenv/**",
   ".mamba/**",
   ".tools/**",
