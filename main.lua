@@ -13,6 +13,11 @@
       static=8 cat=0 dyn=14 title "Choose a character"
 ]]
 
+local text = require("text")
+local stripColours = text.stripColours
+local lowerClean = text.lowerClean
+local isNpcContactSubject = text.isNpcContactSubject
+
 local REFS = {
   logic = "npcSmartphone.logic",
   miniMenuReady = "npcSmartphone.miniMenuReady",
@@ -95,21 +100,6 @@ local syncingSettingUi = false
 
 local function logf(fmt, ...)
   print(string.format("[npc-smartphone] " .. fmt, ...))
-end
-
-local function stripColours(text)
-  if text == nil then
-    return ""
-  end
-  return (string.gsub(text, "<[^>]+>", ""))
-end
-
-local function lowerClean(text)
-  return string.lower(stripColours(text))
-end
-
-local function isNpcContactSubject(text)
-  return string.find(lowerClean(text), "npc contact", 1, true) ~= nil
 end
 
 local function safeProp(component, key)
