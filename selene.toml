@@ -1,0 +1,13 @@
+# Selene config for the RS3 plugin (Lua 5.4.8 runtime).
+# Defaults already cover the usual correctness checks; we mainly set std + excludes.
+# Official Linux selene builds only enable the lua51 parser; rs.yml notes why that is OK.
+std = "rs"
+
+exclude = [
+  "types/**",
+  "src/*_spec.lua",
+  ".luaenv/**",
+  ".mamba/**",
+  ".tools/**",
+  ".lua/**",
+]

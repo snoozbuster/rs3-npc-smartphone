@@ -91,6 +91,22 @@ Run tests:
 
 Specs live next to sources as `src/*_spec.lua` (excluded from deploy).
 
+## Lint
+
+First-time setup (downloads selene into `.tools/`):
+
+```bash
+./scripts/setup-selene.sh
+```
+
+Run:
+
+```bash
+./scripts/lint.sh
+```
+
+Config is `selene.toml` + `rs.yml` (RS plugin globals). Specs and `types/` are excluded; LuaLS still owns editor type-checking.
+
 ## Editor types
 
 LuaLS stubs live under `types/`:

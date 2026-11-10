@@ -1,0 +1,25 @@
+---
+# RuneScape plugin beta globals used by this project.
+# Kept intentionally loose (`any`) so we don't maintain a full API mirror —
+# LuaLS + types/rs already cover that. Selene just needs to know these exist.
+#
+# Note: official Linux selene builds only ship the lua51 *parser* feature.
+# This codebase doesn't use 5.2+ syntax (//, bitwise, goto), so lua51 is fine.
+base: lua51
+name: rs
+globals:
+  PersistentDB:
+    any: true
+  Event:
+    any: true
+  GameKey:
+    any: true
+  MiniMenuActionType:
+    any: true
+  ui:
+    any: true
+  prettyui:
+    any: true
+  # Host entrypoint the client calls on unload; defined in src/main.lua.
+  PluginShutdown:
+    args: []

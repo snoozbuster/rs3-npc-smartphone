@@ -2,5 +2,6 @@
 .mamba/
 .hererocks/
 .lua/
+.tools/
 luacov.*.out
 *.rock
