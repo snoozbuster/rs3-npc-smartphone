@@ -1,9 +1,11 @@
 --[[
-  Colour-tag / subject-text helpers for NPC Smartphone.
+  Colour-tag / string helpers (no domain knowledge).
 ]]
 
 local text = {}
 
+---@param value string|nil
+---@return string
 function text.stripColours(value)
   if value == nil then
     return ""
@@ -11,12 +13,10 @@ function text.stripColours(value)
   return (string.gsub(value, "<[^>]+>", ""))
 end
 
+---@param value string|nil
+---@return string
 function text.lowerClean(value)
   return string.lower(text.stripColours(value))
-end
-
-function text.isNpcContactSubject(value)
-  return string.find(text.lowerClean(value), "npc contact", 1, true) ~= nil
 end
 
 return text

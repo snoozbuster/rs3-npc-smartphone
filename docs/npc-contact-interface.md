@@ -197,11 +197,10 @@ model type / NPC id were not dumped in the discovery pass.
 1. Shell appears: `static=0` gets real width/height (still may have no slots).
 2. Dynamic contacts spawn over subsequent Logic ticks.
 3. Stock layout: tall content (~750) inside shorter viewport (~284) ⇒ scrollbar.
-4. For a names-only layout we:
-   - hide `static=1` (layer + MODELs) immediately to avoid a chathead flash
+4. For a names-only layout we (after slots are ready):
    - hide `static=3` gutter (+ children); refresh while open
    - pack `static=2` labels into a dense 5-column grid (labels `clickthrough`)
-   - unhide Speak-to MODELs, clear visuals, move/resize onto those labels
+   - clear Speak-to MODEL visuals, move/resize onto those labels
    - shrink content hosts `1`/`2` and fit frame statics `0,3,4–8` by one shared
      height delta (snapshot sizes first to avoid double-shrink)
    - clamp `static=0` scroll region and `SetScrollPos(0, 0)`
@@ -217,7 +216,7 @@ clear visuals instead.
 
 1. On `Event.Logic`, treat the picker as open only when geometry + a contact
    slot look real (not merely `GetInterface(88) ~= nil`).
-2. As soon as the shell has size, hide chathead layer `static=1` (anti-flash).
+2. Wait until slots are ready.
 3. When slots are ready, iterate `dyn = 0 ..` until several consecutive misses:
    - name from `GetComponent(88, 2, 0, dyn)`
    - Speak-to from `GetComponent(88, 1, 0, dyn).opConfig`

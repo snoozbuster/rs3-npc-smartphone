@@ -13,10 +13,15 @@
       static=8 cat=0 dyn=14 title "Choose a character"
 ]]
 
-local text = require("text")
+local text = require("lib/text")
+local log = require("lib/log")
+local state = require("state")
+local npc_contact_subject = require("npc_contact_subject")
+
 local stripColours = text.stripColours
 local lowerClean = text.lowerClean
-local isNpcContactSubject = text.isNpcContactSubject
+local isNpcContactSubject = npc_contact_subject.isNpcContactSubject
+local logf = log.new("npc-smartphone").f
 
 local REFS = {
   logic = "npcSmartphone.logic",
@@ -34,11 +39,7 @@ local PROBE_DUMP_KEY = GameKey.F9
 -- Off = leave the vanilla chathead picker untouched.
 -- Exposed via SettingsLayer (Plugin Hub Manage) and ContentLayer (in-game Plugins ribbon).
 local SETTING_HIDE_CHATHEADS = "hideChatheads"
-local hideChatheads = PersistentDB:GetBool(SETTING_HIDE_CHATHEADS)
-if hideChatheads == nil then
-  hideChatheads = true
-end
-PersistentDB:SetBool(SETTING_HIDE_CHATHEADS, hideChatheads)
+local store = state.new(PersistentDB)
 
 -- Compact-layout feature flags (only applied when hideChatheads is on).
 -- MODELs are the Speak-to click targets: keep them unhidden, clear their visuals,
@@ -87,20 +88,13 @@ local refreshPending = false
 local refreshWaitTicks = 0
 local REFRESH_MAX_WAIT_TICKS = 60 -- ~ interface populate timeout
 local uiExperimentApplied = false
-local chatheadsHidden = false -- true while anti-flash has the MODEL layer suppressed
-local speakTargetsAligned = false -- true after Speak-to MODELs overlay packed labels
 local lastCompact = nil -- { baseY, rowH, rows, contentBottom, sampleLabel }
 local layoutBackup = nil -- vanilla geometry captured before compacting
-local labelsSuppressed = false
 local settingsHubView = nil
 local settingsRibbonView = nil
 local settingsHubCheckbox = nil
 local settingsRibbonCheckbox = nil
 local syncingSettingUi = false
-
-local function logf(fmt, ...)
-  print(string.format("[npc-smartphone] " .. fmt, ...))
-end
 
 local function safeProp(component, key)
   local ok, value = pcall(function()
@@ -266,61 +260,6 @@ local function setComponentHidden(component, hidden)
   return ok
 end
 
---- Hide the whole chathead layer immediately (anti-flash), then each MODEL child.
-local function hideContactChatheadLayer()
-  local hiddenCount = 0
-  local layer = getStaticComponent(CONTACT_BUTTON_STATIC)
-  if layer == nil then
-    return 0
-  end
-
-  if setComponentHidden(layer, true) then
-    hiddenCount = hiddenCount + 1
-  end
-
-  pcall(function()
-    layer:IterateDynamicComponents(function(child, visible)
-      if setComponentHidden(child, true) then
-        hiddenCount = hiddenCount + 1
-      end
-      return false
-    end)
-  end)
-
-  return hiddenCount
-end
-
-local function unhideContactChatheadLayer()
-  local layer = getStaticComponent(CONTACT_BUTTON_STATIC)
-  if layer == nil then
-    return 0
-  end
-
-  local shown = 0
-  if setComponentHidden(layer, false) then
-    shown = shown + 1
-  end
-
-  pcall(function()
-    layer:IterateDynamicComponents(function(child, visible)
-      if setComponentHidden(child, false) then
-        shown = shown + 1
-      end
-      return false
-    end)
-  end)
-
-  for _, slot in ipairs(contacts) do
-    local button = getContactButton(slot.dyn)
-    if setComponentHidden(button, false) then
-      shown = shown + 1
-    end
-  end
-
-  chatheadsHidden = false
-  return shown
-end
-
 --- Clear the MODEL visual without hiding the component (keeps Speak-to clickable).
 local function clearSpeakToModelVisual(button)
   if button == nil then
@@ -354,53 +293,6 @@ local function restoreSpeakToModelVisual(button, entry)
     end
   end)
   return ok
-end
-
-local function setContactLabelsHidden(hidden)
-  local layer = getStaticComponent(CONTACT_LABEL_STATIC)
-  if not setComponentHidden(layer, hidden) then
-    return false
-  end
-  labelsSuppressed = hidden
-  pcall(function()
-    layer:IterateDynamicComponents(function(child, visible)
-      setComponentHidden(child, hidden)
-      return false
-    end)
-  end)
-  return true
-end
-
---- True as soon as iface 88 exists (geometry may still be 0x0).
-local function isContactPickerInterfaceLoaded()
-  return ui.Interfaces:GetInterface(CONTACT_IFACE) ~= nil
-end
-
---- Kill the vanilla chathead/grid flash before the compact layout is ready.
---- Scrollbar gutter hide is inlined so this can run before hideContactScrollbarSprites exists.
-local function suppressVanillaContactFlash()
-  if not hideChatheads or uiExperimentApplied then
-    return
-  end
-  if not isContactPickerInterfaceLoaded() then
-    return
-  end
-
-  hideContactChatheadLayer()
-
-  local gutter = getStaticComponent(CONTACT_SCROLLBAR_STATIC)
-  if gutter ~= nil then
-    setComponentHidden(gutter, true)
-    pcall(function()
-      gutter:IterateDynamicComponents(function(child, visible)
-        setComponentHidden(child, true)
-        return false
-      end)
-    end)
-  end
-
-  -- Hide labels until packed so the tall vanilla grid never paints.
-  setContactLabelsHidden(true)
 end
 
 local function clearLayoutBackup()
@@ -577,18 +469,16 @@ local function restoreVanillaContactLayout()
     end
   end
 
-  local shownHeads = unhideContactChatheadLayer()
   local gutter = getStaticComponent(CONTACT_SCROLLBAR_STATIC)
   setComponentHidden(gutter, false)
   if gutter ~= nil then
     pcall(function()
-      gutter:IterateDynamicComponents(function(child, visible)
+      gutter:IterateDynamicComponents(function(child, _visible)
         setComponentHidden(child, false)
         return false
       end)
     end)
   end
-  setContactLabelsHidden(false)
 
   -- Compact mode MoveToFront'd the Speak-to layer over labels; put names back on top.
   local labelLayer = getStaticComponent(CONTACT_LABEL_STATIC)
@@ -610,16 +500,12 @@ local function restoreVanillaContactLayout()
 
   clearLayoutBackup()
   lastCompact = nil
-  chatheadsHidden = false
-  speakTargetsAligned = false
-  labelsSuppressed = false
   logf(
-    "restored vanilla: labels=%d buttons=%d sizes=%d scrolls=%d heads=%d",
+    "restored vanilla: labels=%d buttons=%d sizes=%d scrolls=%d",
     restoredLabels,
     restoredButtons,
     restoredSizes,
-    restoredScrolls,
-    shownHeads
+    restoredScrolls
   )
 end
 
@@ -835,7 +721,6 @@ end
 --- Keep Speak-to MODELs unhidden (action stays bound), clear their chathead visuals,
 --- and move/resize each onto its packed name label so clicking a name contacts the NPC.
 local function alignSpeakToHitboxesToLabels()
-  local shown = unhideContactChatheadLayer()
   local buttonLayer = getStaticComponent(CONTACT_BUTTON_STATIC)
   if buttonLayer ~= nil then
     pcall(function()
@@ -881,12 +766,10 @@ local function alignSpeakToHitboxesToLabels()
     end
   end
 
-  speakTargetsAligned = moved > 0
   logf(
-    "align speak-to: moved=%d cleared=%d shown=%d fail=%d",
+    "align speak-to: moved=%d cleared=%d fail=%d",
     moved,
     cleared,
-    shown,
     failCount
   )
   return moved
@@ -1083,7 +966,7 @@ local function hideContactScrollbarSprites()
   end
 
   local okIter, iterErr = pcall(function()
-    gutter:IterateDynamicComponents(function(child, visible)
+    gutter:IterateDynamicComponents(function(child, _visible)
       local okHide, hideErr = pcall(function()
         child.hidden = true
       end)
@@ -1125,11 +1008,9 @@ local function pickerLooksReady()
 end
 
 local function applyContactUiExperiment()
-  if not hideChatheads then
+  if not store:get(SETTING_HIDE_CHATHEADS) then
     logf("hide chatheads off — leaving vanilla picker")
     uiExperimentApplied = true
-    labelsSuppressed = false
-    speakTargetsAligned = false
     return
   end
 
@@ -1140,12 +1021,12 @@ local function applyContactUiExperiment()
   clampContactScrollSize()
   fitContactWindowToContent()
   local sbHidden = hideContactScrollbarSprites()
-  setContactLabelsHidden(false)
   logf("hide scrollbar: hidden=%d (static=%d gutter + children)", sbHidden, CONTACT_SCROLLBAR_STATIC)
   uiExperimentApplied = true
 end
 
 local function syncSettingCheckboxes()
+  local hideChatheads = store:get(SETTING_HIDE_CHATHEADS)
   syncingSettingUi = true
   if settingsHubCheckbox ~= nil then
     pcall(function()
@@ -1165,16 +1046,15 @@ local function setHideChatheads(enabled)
     return
   end
 
-  local previous = hideChatheads
   local nextValue = enabled and true or false
-  if previous == nextValue then
+  local changed = store:set(SETTING_HIDE_CHATHEADS, nextValue)
+  if not changed then
     syncSettingCheckboxes()
     return
   end
 
-  hideChatheads = nextValue
-  PersistentDB:SetBool(SETTING_HIDE_CHATHEADS, hideChatheads)
   syncSettingCheckboxes()
+  local hideChatheads = store:get(SETTING_HIDE_CHATHEADS)
   logf("setting hideChatheads=%s", tostring(hideChatheads))
 
   if not contactOpen then
@@ -1187,7 +1067,6 @@ local function setHideChatheads(enabled)
     clearLayoutBackup()
     refreshPending = true
     refreshWaitTicks = 0
-    suppressVanillaContactFlash()
     refreshContacts()
     if pickerLooksReady() then
       refreshPending = false
@@ -1212,7 +1091,7 @@ local function mountSettingsView(parent)
     {
       text = "Hide chatheads",
       value = SETTING_HIDE_CHATHEADS,
-      selected = hideChatheads,
+      selected = store:get(SETTING_HIDE_CHATHEADS),
     },
   }, {
     onChange = function(_, _, _, selected)
@@ -1258,16 +1137,16 @@ local function onContentLayerReady(event)
 end
 
 local function onContactOpened()
-  logf("contact iface %s OPEN (hideChatheads=%s)", tostring(CONTACT_IFACE), tostring(hideChatheads))
+  logf(
+    "contact iface %s OPEN (hideChatheads=%s)",
+    tostring(CONTACT_IFACE),
+    tostring(store:get(SETTING_HIDE_CHATHEADS))
+  )
   refreshPending = true
   refreshWaitTicks = 0
   uiExperimentApplied = false
-  chatheadsHidden = false
-  speakTargetsAligned = false
-  labelsSuppressed = false
   lastCompact = nil
   clearLayoutBackup()
-  suppressVanillaContactFlash()
 end
 
 local function onContactClosed()
@@ -1276,19 +1155,11 @@ local function onContactClosed()
   refreshPending = false
   refreshWaitTicks = 0
   uiExperimentApplied = false
-  chatheadsHidden = false
-  speakTargetsAligned = false
-  labelsSuppressed = false
   lastCompact = nil
   clearLayoutBackup()
 end
 
 local function onLogic()
-  -- Suppress vanilla chrome as soon as iface 88 exists, every tick until packed.
-  if hideChatheads and not uiExperimentApplied then
-    suppressVanillaContactFlash()
-  end
-
   local open = isContactPickerVisiblyOpen()
   if open ~= contactOpen then
     contactOpen = open
@@ -1303,9 +1174,6 @@ local function onLogic()
   if refreshPending and contactOpen and not uiExperimentApplied then
     refreshWaitTicks = refreshWaitTicks + 1
     refreshContacts()
-    if hideChatheads then
-      suppressVanillaContactFlash()
-    end
 
     if pickerLooksReady() then
       refreshPending = false
@@ -1327,7 +1195,7 @@ local function onLogic()
   end
 
   -- Wheel events can unhide scrollbar chrome; keep the gutter suppressed while open.
-  if hideChatheads and contactOpen and uiExperimentApplied and HIDE_SCROLLBAR then
+  if store:get(SETTING_HIDE_CHATHEADS) and contactOpen and uiExperimentApplied and HIDE_SCROLLBAR then
     hideContactScrollbarSprites()
   end
 end
@@ -1461,7 +1329,7 @@ end
 
 logf(
   "loaded v0.0.22 layout=88/{speak:static1,name:static2} hideChatheads=%s collapse=%s clampScroll=%s hideSb=%s fit=%s spell=%s/%s/%s/%s",
-  tostring(hideChatheads),
+  tostring(store:get(SETTING_HIDE_CHATHEADS)),
   tostring(COLLAPSE_LABELS),
   tostring(CLAMP_SCROLL_SIZE),
   tostring(HIDE_SCROLLBAR),
