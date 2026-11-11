@@ -56,9 +56,11 @@ UI surfaces follow **component → element → host**:
    a native/stock iface host can be added later without rewriting
    components).
 
-Settings already use this split (`settings/SettingsPanel.lua` →
-`lib/prettyui_host.lua`). Contact picker work still lands on the same idea
-(plan as element tree; push as host), with a second host for Speak-to bind.
+Settings already use this split: `settings/view.render` → element tree →
+`lib/prettyui_host` via `lib/bind` (definition = host/render/subscribe;
+`mount(parent)` per surface). Bind has no store knowledge — the app closes
+over domain state in `render` / `subscribe`. Contact picker work still lands
+on the same idea, with a second host for Speak-to bind.
 
 ### State and notify
 
@@ -131,17 +133,18 @@ Illustration only. To be refined as implementation proceeds.
 
 ```
 src/
-  main.lua                      -- subscribe events, PluginShutdown
+  main.lua                      -- subscribe events, PluginShutdown; bind + mount
   lib/                          -- no NPC Contact / option-key knowledge
     observable.lua              -- subscribe / notify / set-with-diff
     element.lua                 -- host-agnostic vnode helper
     prettyui_host.lua           -- PrettyUI mount/update/destroy
+    bind.lua                    -- bind(host, render, subscribe?).mount(parent)
     …                           -- generic helpers
   state.lua                     -- options + last-contact on observable
   settings.lua                  -- option keys
   settings/
     SettingsPanel.lua           -- props → element tree (pure)
-    view.lua                    -- store snapshot → component → host
+    view.lua                    -- render(parent, store) → Element
   contact/                      -- (future) capture / component / host
   categories.lua                -- NPC → header mapping (data)
 ```
@@ -229,9 +232,10 @@ geometry or models dirty across `poff` / `prl`.
 ### 5. Settings and last-contact (beside the picker pipeline)
 
 - Load/persist options via PersistentDB behind the domain state store.
-- Mount settings UI on `SettingsLayerReady` and `ContentLayerReady`; both
-  subscribe to the same store and rebuild the SettingsPanel element tree via
-  the PrettyUI host.
+- Bind settings once (`prettyui_host` + render/subscribe closed over the
+  store); on `SettingsLayerReady` / `ContentLayerReady`, `mount` or
+  `update(parent)` so hub and ribbon are separate instances of the same
+  definition.
 - Last-contact / redial identity is plugin state (persisted as needed),
   updated when the player selects a contact Speak-to — not synthesized as a
   new game action.

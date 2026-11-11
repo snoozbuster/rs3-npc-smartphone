@@ -15,8 +15,11 @@
 
 local text = require("lib/text")
 local log = require("lib/log")
+local bind = require("lib/bind")
+local prettyui_host = require("lib/prettyui_host")
 local state = require("state")
 local settings = require("settings")
+local settingsView = require("settings/view")
 local npc_contact_subject = require("npc_contact_subject")
 
 local stripColours = text.stripColours
@@ -39,8 +42,16 @@ local PROBE_DUMP_KEY = GameKey.F9
 -- User setting: hide Speak-to MODEL chatheads and reflow labels into a compact grid.
 -- Off = leave the vanilla chathead picker untouched.
 -- Exposed via SettingsLayer (Plugin Hub Manage) and ContentLayer (in-game Plugins ribbon).
-local SETTING_HIDE_CHATHEADS = settings.HIDE_CHATHEADS
 local store = state.new(PersistentDB)
+local settingsUi = bind.new({
+  host = prettyui_host,
+  render = function(parent)
+    return settingsView.render(parent, store)
+  end,
+  subscribe = function(fn)
+    return store:subscribe(fn)
+  end,
+})
 
 -- Compact-layout feature flags (only applied when hideChatheads is on).
 -- MODELs are the Speak-to click targets: keep them unhidden, clear their visuals,
@@ -51,10 +62,10 @@ local CLAMP_SCROLL_SIZE = true
 local HIDE_SCROLLBAR = true
 local FIT_WINDOW_TO_CONTENT = true
 local COMPACT_COLS = 5
-local COMPACT_ROW_HEIGHT = 22 -- label cells are tall (~100); use text-sized pitch instead
-local INTERFACE_BOTTOM_PAD = 48 -- keep descenders / last row inside the frame
+local COMPACT_ROW_HEIGHT = 22      -- label cells are tall (~100); use text-sized pitch instead
+local INTERFACE_BOTTOM_PAD = 48    -- keep descenders / last row inside the frame
 local CONTACT_SCROLLBAR_STATIC = 3 -- 16x284 gutter at x≈475
-local CONTACT_VIEWPORT_STATIC = 0 -- 471x284 scroll host
+local CONTACT_VIEWPORT_STATIC = 0  -- 471x284 scroll host
 -- Frame/chrome layers to shorten when fitting the window (iface 88 scaffold).
 -- Snapshot heights before any SetSize — resizing a parent can auto-resize children,
 -- and applying delta again would double-shrink (cut off the list).
@@ -70,7 +81,7 @@ local SPELL_DYN = 108
 
 local CONTACT_IFACE = 88
 local CONTACT_BUTTON_STATIC = 1 -- Speak-to / chathead MODELs
-local CONTACT_LABEL_STATIC = 2 -- name text
+local CONTACT_LABEL_STATIC = 2  -- name text
 local CONTACT_CAT = 0
 local CONTACT_SLOT_MAX = 64
 
@@ -89,13 +100,13 @@ local refreshPending = false
 local refreshWaitTicks = 0
 local REFRESH_MAX_WAIT_TICKS = 60 -- ~ interface populate timeout
 local uiExperimentApplied = false
-local lastCompact = nil -- { baseY, rowH, rows, contentBottom, sampleLabel }
-local layoutBackup = nil -- vanilla geometry captured before compacting
+local lastCompact = nil           -- { baseY, rowH, rows, contentBottom, sampleLabel }
+local layoutBackup = nil          -- vanilla geometry captured before compacting
+---@type BoundViewInstance|nil
 local settingsHubView = nil
+---@type BoundViewInstance|nil
 local settingsRibbonView = nil
-local settingsHubCheckbox = nil
-local settingsRibbonCheckbox = nil
-local syncingSettingUi = false
+local unsubscribeHideChatheads = nil
 
 local function safeProp(component, key)
   local ok, value = pcall(function()
@@ -1009,7 +1020,7 @@ local function pickerLooksReady()
 end
 
 local function applyContactUiExperiment()
-  if not store:get(SETTING_HIDE_CHATHEADS) then
+  if not store:get(settings.HIDE_CHATHEADS) then
     logf("hide chatheads off — leaving vanilla picker")
     uiExperimentApplied = true
     return
@@ -1026,36 +1037,9 @@ local function applyContactUiExperiment()
   uiExperimentApplied = true
 end
 
-local function syncSettingCheckboxes()
-  local hideChatheads = store:get(SETTING_HIDE_CHATHEADS)
-  syncingSettingUi = true
-  if settingsHubCheckbox ~= nil then
-    pcall(function()
-      settingsHubCheckbox:SetSelected(SETTING_HIDE_CHATHEADS, hideChatheads)
-    end)
-  end
-  if settingsRibbonCheckbox ~= nil then
-    pcall(function()
-      settingsRibbonCheckbox:SetSelected(SETTING_HIDE_CHATHEADS, hideChatheads)
-    end)
-  end
-  syncingSettingUi = false
-end
-
-local function setHideChatheads(enabled)
-  if syncingSettingUi then
-    return
-  end
-
-  local nextValue = enabled and true or false
-  local changed = store:set(SETTING_HIDE_CHATHEADS, nextValue)
-  if not changed then
-    syncSettingCheckboxes()
-    return
-  end
-
-  syncSettingCheckboxes()
-  local hideChatheads = store:get(SETTING_HIDE_CHATHEADS)
+--- Apply or restore compact contact layout when hideChatheads changes while open.
+---@param hideChatheads boolean
+local function onHideChatheadsChanged(hideChatheads)
   logf("setting hideChatheads=%s", tostring(hideChatheads))
 
   if not contactOpen then
@@ -1080,60 +1064,33 @@ local function setHideChatheads(enabled)
   end
 end
 
-local function mountSettingsView(parent)
-  local view = prettyui.SimpleView.new(parent, {
-    width = parent.width,
-    height = parent.height,
-  })
-
-  view:AddTitle("NPC Smartphone")
-  view:AddText("Changes apply immediately, including while NPC Contact is open.")
-  local checkbox = view:AddCheckboxButton({
-    {
-      text = "Hide chatheads",
-      value = SETTING_HIDE_CHATHEADS,
-      selected = store:get(SETTING_HIDE_CHATHEADS),
-    },
-  }, {
-    onChange = function(_, _, _, selected)
-      setHideChatheads(selected)
-    end,
-  })
-
-  return view, checkbox
-end
-
 local function onSettingsLayerReady(event)
-  if settingsHubView ~= nil then
-    settingsHubView:Destroy()
-    settingsHubView = nil
-    settingsHubCheckbox = nil
-  end
-
   local parent = event.component
   if parent == nil then
     logf("settings layer: missing component")
     return
   end
 
-  settingsHubView, settingsHubCheckbox = mountSettingsView(parent)
+  if settingsHubView ~= nil then
+    settingsHubView.update(parent)
+  else
+    settingsHubView = settingsUi.mount(parent)
+  end
   logf("settings layer mounted (plugin hub)")
 end
 
 local function onContentLayerReady(event)
-  if settingsRibbonView ~= nil then
-    settingsRibbonView:Destroy()
-    settingsRibbonView = nil
-    settingsRibbonCheckbox = nil
-  end
-
   local parent = event.component
   if parent == nil then
     logf("content layer: missing component")
     return
   end
 
-  settingsRibbonView, settingsRibbonCheckbox = mountSettingsView(parent)
+  if settingsRibbonView ~= nil then
+    settingsRibbonView.update(parent)
+  else
+    settingsRibbonView = settingsUi.mount(parent)
+  end
   logf("content layer mounted (in-game plugins)")
 end
 
@@ -1141,7 +1098,7 @@ local function onContactOpened()
   logf(
     "contact iface %s OPEN (hideChatheads=%s)",
     tostring(CONTACT_IFACE),
-    tostring(store:get(SETTING_HIDE_CHATHEADS))
+    tostring(store:get(settings.HIDE_CHATHEADS))
   )
   refreshPending = true
   refreshWaitTicks = 0
@@ -1196,7 +1153,7 @@ local function onLogic()
   end
 
   -- Wheel events can unhide scrollbar chrome; keep the gutter suppressed while open.
-  if store:get(SETTING_HIDE_CHATHEADS) and contactOpen and uiExperimentApplied and HIDE_SCROLLBAR then
+  if store:get(settings.HIDE_CHATHEADS) and contactOpen and uiExperimentApplied and HIDE_SCROLLBAR then
     hideContactScrollbarSprites()
   end
 end
@@ -1301,6 +1258,13 @@ local function onKeyDown(event)
   applyContactUiExperiment()
 end
 
+unsubscribeHideChatheads = store:subscribe(function(key, value)
+  if key ~= settings.HIDE_CHATHEADS then
+    return
+  end
+  onHideChatheadsChanged(value and true or false)
+end)
+
 Event.Logic.Subscribe(REFS.logic, onLogic)
 Event.MiniMenuReady.Subscribe(REFS.miniMenuReady, onMiniMenuReady)
 Event.MiniMenuEntrySelected.Subscribe(REFS.miniMenuSelected, onMiniMenuSelected)
@@ -1315,22 +1279,24 @@ function PluginShutdown()
   Event.KeyDown.Unsubscribe(REFS.keyDown)
   Event.SettingsLayerReady.Unsubscribe(REFS.settingsLayer)
   Event.ContentLayerReady.Unsubscribe(REFS.contentLayer)
+  if unsubscribeHideChatheads ~= nil then
+    unsubscribeHideChatheads()
+    unsubscribeHideChatheads = nil
+  end
   if settingsHubView ~= nil then
-    settingsHubView:Destroy()
+    settingsHubView.unmount()
     settingsHubView = nil
-    settingsHubCheckbox = nil
   end
   if settingsRibbonView ~= nil then
-    settingsRibbonView:Destroy()
+    settingsRibbonView.unmount()
     settingsRibbonView = nil
-    settingsRibbonCheckbox = nil
   end
   logf("shutdown")
 end
 
 logf(
   "loaded v0.0.22 layout=88/{speak:static1,name:static2} hideChatheads=%s collapse=%s clampScroll=%s hideSb=%s fit=%s spell=%s/%s/%s/%s",
-  tostring(store:get(SETTING_HIDE_CHATHEADS)),
+  tostring(store:get(settings.HIDE_CHATHEADS)),
   tostring(COLLAPSE_LABELS),
   tostring(CLAMP_SCROLL_SIZE),
   tostring(HIDE_SCROLLBAR),
