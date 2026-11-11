@@ -16,8 +16,9 @@ click targets; visuals may be cleared and hitboxes aligned to the presented
 rows.
 
 - **Option:** e.g. `hide chatheads`
-- **Status:** Prototype exists in `main.lua`; to be rebuilt on the
-  production architecture.
+- **Status:** Lifted into `contact/picker.lua` (prototype compact pipeline:
+  collapse → align Speak-to → clamp scroll → fit window → hide scrollbar).
+  Capture / plan / push decomposition still deferred.
 
 ### Group contacts under purpose headers
 

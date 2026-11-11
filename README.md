@@ -142,7 +142,8 @@ git add types/rs
 1. `./scripts/deploy.sh` then `prl npc-smartphone` (or `pon` the first time).
 2. Switch to the Lunar spellbook and cast **NPC Contact**.
 3. Console should log `contact iface 88 OPEN` and a `contacts (29):` dump.
-4. **F9** re-prints the contact list while the picker is open.
+4. **F9** (probe on by default) re-prints the contact list, dumps iface-88
+   scaffold geometry, and re-applies compact layout while the picker is open.
 
 ## References
 

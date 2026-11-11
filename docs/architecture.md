@@ -145,7 +145,10 @@ src/
   settings/
     SettingsPanel.lua           -- props → element tree (pure)
     view.lua                    -- render(parent, store) → Element
-  contact/                      -- (future) capture / component / host
+  contact/
+    picker.lua                  -- monolith: open/ready, compact, restore
+                                -- (capture / plan / push still deferred)
+  probe.lua                     -- optional F9 / MiniMenu diagnostics
   categories.lua                -- NPC → header mapping (data)
 ```
 
