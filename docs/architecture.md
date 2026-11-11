@@ -40,11 +40,25 @@ plugin state (options, last-contact, …)
         │
         │  subscribe / notify
         ▼
-   view adapters  ──►  plan  ──►  push
+   view adapters  ──►  component (props → element tree)  ──►  host bind
         ▲
         │
  capture / game events (picker open, layer ready, …)
 ```
+
+UI surfaces follow **component → element → host**:
+
+1. **Component** — pure function of props that returns a declarative element
+   tree (`type`, `props`, `children`, event handlers). Testable without a
+   UI backend.
+2. **Element** — host-agnostic vnode protocol (`lib/element.lua`).
+3. **Host** — mounts/patches that tree onto a backend (PrettyUI today;
+   a native/stock iface host can be added later without rewriting
+   components).
+
+Settings already use this split (`settings/SettingsPanel.lua` →
+`lib/prettyui_host.lua`). Contact picker work still lands on the same idea
+(plan as element tree; push as host), with a second host for Speak-to bind.
 
 ### State and notify
 
@@ -57,19 +71,19 @@ Notify after a successful commit (including persistence where relevant).
 Skip notify when the value is unchanged. Programmatic UI updates must not
 re-enter `set` in a loop (compare-before-set and/or silent updates).
 
-### Capture → plan → push
+### Capture → component → host
 
 For any surface that draws UI:
 
 1. **Capture** inputs needed for that surface (game UI scrape and/or current
    state).
-2. **Plan** a pure transform into a view model / layout description
+2. **Component** — pure transform of those inputs into an element tree
    (options applied here).
-3. **Push** that plan into live components.
+3. **Host** — mount/update/destroy that tree on live components.
 
-Settings change → rebuild plan → push again. Picker becomes ready → same
-path. That is the rebuild loop; it is intentional and similar to ordinary
-UI libraries.
+Settings change → rebuild element tree → host update. Picker becomes ready →
+same path. That is the rebuild loop; it is intentional and similar to
+ordinary UI libraries.
 
 ### Two write surfaces when pushing
 
@@ -96,15 +110,15 @@ targets have been aligned to the presented layout.
 
 ### Settings vs contact views
 
-Both are views of plugin state and can share the same rebuild discipline.
-They do not share one mega-pipeline:
+Both are views of plugin state and can share the same element protocol and
+rebuild discipline. They do not share one mega-module:
 
-|         | Contact picker                           | Settings (hub + ribbon)                             |
-| ------- | ---------------------------------------- | --------------------------------------------------- |
-| Host    | iface `88` (+ optional overlay)          | `event.component` from Settings/Content layer ready |
-| Capture | open/ready detection + parse stock slots | mostly current state (+ PersistentDB on load)       |
-| Plan    | filter / group / redial / layout         | map options → controls                              |
-| Push    | plugin UI **and** Speak-to bind          | plugin UI only                                      |
+|            | Contact picker                           | Settings (hub + ribbon)                             |
+| ---------- | ---------------------------------------- | --------------------------------------------------- |
+| Host       | iface `88` (+ optional overlay)          | PrettyUI on Settings/Content layer `event.component` |
+| Capture    | open/ready detection + parse stock slots | mostly current state (+ PersistentDB on load)       |
+| Component  | filter / group / redial / layout tree    | options → controls element tree                     |
+| Host bind  | plugin UI **and** Speak-to mutate        | plugin UI only                                      |
 
 ## Lib / plugin split
 
@@ -120,16 +134,16 @@ src/
   main.lua                      -- subscribe events, PluginShutdown
   lib/                          -- no NPC Contact / option-key knowledge
     observable.lua              -- subscribe / notify / set-with-diff
-    …                           -- generic view lifecycle, pure helpers
-  npc_smartphone/               -- product domain
-    state.lua                   -- options + last-contact on observable
-    contact/
-      capture.lua
-      transform.lua             -- pure
-      render.lua                -- push (plugin UI + stock bind)
-    settings/
-      view.lua
-    categories.lua              -- NPC → header mapping (data)
+    element.lua                 -- host-agnostic vnode helper
+    prettyui_host.lua           -- PrettyUI mount/update/destroy
+    …                           -- generic helpers
+  state.lua                     -- options + last-contact on observable
+  settings.lua                  -- option keys
+  settings/
+    SettingsPanel.lua           -- props → element tree (pure)
+    view.lua                    -- store snapshot → component → host
+  contact/                      -- (future) capture / component / host
+  categories.lua                -- NPC → header mapping (data)
 ```
 
 **`lib/` rule:** a module belongs there only if it has no knowledge of iface
@@ -168,10 +182,10 @@ production cut**; revisit later (e.g. hide stock content and present a full
 substitute overlay). Correctness of Speak-to binding and options-off
 identity come first.
 
-### 2. Apply plugin options (pure transform)
+### 2. Apply plugin options (pure component)
 
-Combine captured contacts with plugin state into a **layout plan**, for
-example:
+Combine captured contacts with plugin state into an **element tree** (layout
+plan), for example:
 
 - which contacts are visible (filters);
 - grouping under category headers;
@@ -179,15 +193,15 @@ example:
 - whether a redial row/control is present and which contact it refers to;
 - positions / structure for plugin chrome.
 
-With all options off, the plan should describe the vanilla interface
+With all options off, the tree should describe the vanilla interface
 (assertable from a snapshot in tests).
 
 Category metadata (wiki-derived maps, etc.) is domain data fed into this
 step, not scraped from the live UI every time.
 
-### 3. Push / render
+### 3. Host bind / render
 
-Reconcile the plan to the live client:
+Reconcile the element tree to the live client:
 
 - create or rebuild plugin-owned UI for the presented list (headers, labels,
   redial chrome, …);
@@ -198,7 +212,7 @@ Reconcile the plan to the live client:
 - optionally hide or suppress stock chrome that the substitute UI replaces.
 
 Re-running this after a state notify (settings change while open) is the
-supported update path: rebuild plan → push again.
+supported update path: rebuild element tree → host update.
 
 ### 4. Teardown
 
@@ -208,15 +222,16 @@ shuts down:
 - destroy plugin-owned nodes for that surface;
 - restore any stock mutations so iface `88` is not left mangled.
 
-Options-off identity in the pure planner does not replace live undo of a
-previous push; shutdown in particular should not leave Speak-to geometry or
-models dirty across `poff` / `prl`.
+Options-off identity in the pure component does not replace live undo of a
+previous host bind; shutdown in particular should not leave Speak-to
+geometry or models dirty across `poff` / `prl`.
 
 ### 5. Settings and last-contact (beside the picker pipeline)
 
 - Load/persist options via PersistentDB behind the domain state store.
 - Mount settings UI on `SettingsLayerReady` and `ContentLayerReady`; both
-  subscribe to the same store and rebuild (or patch) from state.
+  subscribe to the same store and rebuild the SettingsPanel element tree via
+  the PrettyUI host.
 - Last-contact / redial identity is plugin state (persisted as needed),
   updated when the player selects a contact Speak-to — not synthesized as a
   new game action.
