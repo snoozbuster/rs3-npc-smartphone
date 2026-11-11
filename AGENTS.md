@@ -15,4 +15,6 @@
 ## Testing
 
 - New or changed functions get unit tests (`src/*_spec.lua`).
-- After every change, run `./scripts/test.sh` and `./scripts/lint.sh` (setup: [README](README.md#unit-tests)).
+- After every change, run `./scripts/test.sh` and `./scripts/lint.sh` (setup: [README](README.md#testing)).
+- `./scripts/test.sh` is **unit tests + LuaLS typecheck**; both must pass.
+- Keep EmmyLua annotations accurate on code we write (`---@param` / `@return` / `@class`); prefer narrow duck types over bare `table`. See [architecture](docs/architecture.md#north-star-maintainability).

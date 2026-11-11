@@ -8,5 +8,12 @@
     "types/overrides.lua",
     "types/prettyui"
   ],
-  "workspace.checkThirdParty": false
+  "workspace.checkThirdParty": false,
+  "diagnostics.libraryFiles": "Disable",
+  "workspace.ignoreDir": [
+    ".tools",
+    ".luaenv",
+    ".mamba",
+    "types"
+  ]
 }

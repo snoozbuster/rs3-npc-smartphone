@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Run busted unit tests with the local Lua 5.4 env (.luaenv).
+# Run unit tests + LuaLS typecheck.
 #
 # First-time setup:
 #   ./scripts/setup-busted.sh
+#   ./scripts/setup-luals.sh
 
 set -euo pipefail
 
@@ -19,9 +20,14 @@ fi
 export PATH="${LUAENV}/bin:${PATH}"
 cd "$ROOT"
 
+echo "==> unit tests"
 # busted defaults ROOT to ./spec; search src/ for colocated *_spec.lua files.
 if [[ $# -eq 0 ]]; then
-  set -- src
+  "$BUSTED" src
+else
+  "$BUSTED" "$@"
 fi
 
-exec "$BUSTED" "$@"
+echo
+echo "==> typecheck"
+exec "${ROOT}/scripts/typecheck.sh"

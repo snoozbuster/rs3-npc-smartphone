@@ -77,21 +77,25 @@ Other useful commands:
 
 Console output from the plugin is prefixed with `[npc-smartphone]`.
 
-## Unit tests
+## Testing
 
-First-time setup (project-local Lua 5.4.8 + busted via micromamba):
+`./scripts/test.sh` runs **unit tests and LuaLS typecheck**; both must pass.
+
+First-time setup:
 
 ```bash
-./scripts/setup-busted.sh
+./scripts/setup-busted.sh   # project-local Lua 5.4.8 + busted (micromamba)
+./scripts/setup-luals.sh    # project-local lua-language-server into .tools/
 ```
 
-Run tests:
+Run:
 
 ```bash
 ./scripts/test.sh
 ```
 
-Specs live next to sources as `src/*_spec.lua` (excluded from deploy).
+- Specs live next to sources as `src/*_spec.lua` (excluded from deploy).
+- Typecheck uses `.luarc.json` + `types/` stubs (`./scripts/typecheck.sh` alone if needed).
 
 ## Lint
 
@@ -107,7 +111,7 @@ Run:
 ./scripts/lint.sh
 ```
 
-Config is `selene.toml` + `rs.yml` (RS plugin globals). Specs and `types/` are excluded; LuaLS still owns editor type-checking.
+Config is `selene.toml` + `rs.yml` (RS plugin globals). Specs and `types/` are excluded from selene; EmmyLua typing is covered by `./scripts/test.sh` / `./scripts/typecheck.sh`.
 
 ## Editor types
 

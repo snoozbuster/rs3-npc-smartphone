@@ -18,6 +18,7 @@ that job easy.
 | Modules group related code | Related behaviour lives together; unrelated concerns do not share a file.                                                                                     |
 | Idiomatic Lua              | Tables as records/modules, `require` for boundaries, factories for stateful libs, explicit returns.                                                           |
 | Prefer purity              | Pure functions are easier to read and unit-test. Touch the RS3 API and other globals only at well-defined edges of the plugin.                                |
+| Accurate type annotations  | EmmyLua/`---@` on functions we write: real `@param` / `@return` / `@class` shapes (narrow duck types over vague `table` when the contract is known). LuaLS-only — not runtime. |
 
 Additional feature constraint: **if all plugin options are off, behaviour
 matches the original NPC Contact interface.** That identity should be
