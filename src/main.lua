@@ -16,6 +16,7 @@
 local text = require("lib/text")
 local log = require("lib/log")
 local state = require("state")
+local settings = require("settings")
 local npc_contact_subject = require("npc_contact_subject")
 
 local stripColours = text.stripColours
@@ -38,7 +39,7 @@ local PROBE_DUMP_KEY = GameKey.F9
 -- User setting: hide Speak-to MODEL chatheads and reflow labels into a compact grid.
 -- Off = leave the vanilla chathead picker untouched.
 -- Exposed via SettingsLayer (Plugin Hub Manage) and ContentLayer (in-game Plugins ribbon).
-local SETTING_HIDE_CHATHEADS = "hideChatheads"
+local SETTING_HIDE_CHATHEADS = settings.HIDE_CHATHEADS
 local store = state.new(PersistentDB)
 
 -- Compact-layout feature flags (only applied when hideChatheads is on).

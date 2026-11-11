@@ -4,18 +4,15 @@
 ]]
 
 local observable = require("lib/observable")
+local settings = require("settings")
 
 local state = {}
 
----@alias StateKey "hideChatheads"
 ---@alias StateMap table<StateKey, boolean>
-
----@type StateKey
-local KEY_HIDE_CHATHEADS = "hideChatheads"
 
 ---@type table<StateKey, boolean>
 local ALLOWED_KEYS = {
-  [KEY_HIDE_CHATHEADS] = true,
+  [settings.HIDE_CHATHEADS] = true,
 }
 
 --- Persistence surface state actually uses (PersistentDB or a test fake).
@@ -32,11 +29,11 @@ local ALLOWED_KEYS = {
 ---@param db StateDb
 ---@return boolean
 local function loadHideChatheads(db)
-  local value = db:GetBool(KEY_HIDE_CHATHEADS)
+  local value = db:GetBool(settings.HIDE_CHATHEADS)
 
   if value == nil then
     value = true
-    db:SetBool(KEY_HIDE_CHATHEADS, value)
+    db:SetBool(settings.HIDE_CHATHEADS, value)
   end
 
   return value
@@ -49,7 +46,7 @@ function state.new(db)
   local hideChatheads = loadHideChatheads(db)
   ---@type Observable<StateKey, boolean>
   local notifier = observable.new({
-    [KEY_HIDE_CHATHEADS] = hideChatheads,
+    [settings.HIDE_CHATHEADS] = hideChatheads,
   })
 
   notifier:subscribe(function(key, value)
