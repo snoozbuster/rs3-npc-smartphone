@@ -11,9 +11,12 @@ local settings = require("settings")
 ---@field width number
 ---@field height number
 
+local settings_panel = {}
+
+--- Props → element tree.
 ---@param props SettingsPanelProps
 ---@return Element
-local function SettingsPanel(props)
+function settings_panel.SettingsPanel(props)
   return element.h("box", { width = props.width, height = props.height }, {
     element.h("title", { text = "NPC Smartphone" }),
     element.h("checkbox_group", {
@@ -31,4 +34,4 @@ local function SettingsPanel(props)
   })
 end
 
-return SettingsPanel
+return settings_panel

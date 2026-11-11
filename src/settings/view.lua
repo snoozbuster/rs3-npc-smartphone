@@ -4,7 +4,8 @@
 ]]
 
 local settings = require("settings")
-local SettingsPanel = require("settings/SettingsPanel")
+local settings_panel = require("settings/SettingsPanel")
+local SettingsPanel = settings_panel.SettingsPanel
 
 local view = {}
 

@@ -1,9 +1,9 @@
-local SettingsPanel = require("settings/SettingsPanel")
+local settings_panel = require("settings/SettingsPanel")
 local settings = require("settings")
 
 describe("SettingsPanel", function()
   local function render(hideChatheads, set)
-    return SettingsPanel({
+    return settings_panel.SettingsPanel({
       hideChatheads = hideChatheads,
       set = set or function() end,
       width = 320,
