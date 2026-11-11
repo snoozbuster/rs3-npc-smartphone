@@ -20,12 +20,12 @@ local prettyui_host = require("lib/prettyui_host")
 local state = require("state")
 local settings = require("settings")
 local settingsView = require("settings/view")
-local npc_contact_subject = require("npc_contact_subject")
+local probe = require("probe")
 
 local stripColours = text.stripColours
 local lowerClean = text.lowerClean
-local isNpcContactSubject = npc_contact_subject.isNpcContactSubject
-local logf = log.new("npc-smartphone").f
+local logger = log.new("npc-smartphone")
+local logf = logger.f
 
 local REFS = {
   logic = "npcSmartphone.logic",
@@ -35,9 +35,6 @@ local REFS = {
   settingsLayer = "npcSmartphone.settingsLayer",
   contentLayer = "npcSmartphone.contentLayer",
 }
-
-local PROBE_ENABLED = true
-local PROBE_DUMP_KEY = GameKey.F9
 
 -- User setting: hide Speak-to MODEL chatheads and reflow labels into a compact grid.
 -- Off = leave the vanilla chathead picker untouched.
@@ -71,31 +68,16 @@ local CONTACT_VIEWPORT_STATIC = 0  -- 471x284 scroll host
 -- and applying delta again would double-shrink (cut off the list).
 local CONTACT_FRAME_STATICS = { 0, 3, 4, 5, 6, 7, 8 }
 
-local ACTION_CAST = MiniMenuActionType.IF_BUTTONX1
-local ACTION_REDIAL = MiniMenuActionType.IF_BUTTONX2
-
-local SPELL_IFACE = 1886
-local SPELL_STATIC = 1
-local SPELL_CAT = 0
-local SPELL_DYN = 108
-
 local CONTACT_IFACE = 88
 local CONTACT_BUTTON_STATIC = 1 -- Speak-to / chathead MODELs
 local CONTACT_LABEL_STATIC = 2  -- name text
 local CONTACT_CAT = 0
 local CONTACT_SLOT_MAX = 64
 
-local contactInterfaceId = CONTACT_IFACE
-local spellInterfaceId = PersistentDB:GetInt("spellInterfaceId") or SPELL_IFACE
-local spellStaticId = PersistentDB:GetInt("spellStaticId") or SPELL_STATIC
-local spellCategoryId = PersistentDB:GetInt("spellCategoryId") or SPELL_CAT
-local spellDynamicId = PersistentDB:GetInt("spellDynamicId") or SPELL_DYN
-
 PersistentDB:SetInt("contactInterfaceId", CONTACT_IFACE)
 
 local contactOpen = false
 local contacts = {} -- array of { dyn, name, hasSpeakTo }
-local lastMiniMenuLogKey = nil
 local refreshPending = false
 local refreshWaitTicks = 0
 local REFRESH_MAX_WAIT_TICKS = 60 -- ~ interface populate timeout
@@ -107,6 +89,8 @@ local settingsHubView = nil
 ---@type BoundViewInstance|nil
 local settingsRibbonView = nil
 local unsubscribeHideChatheads = nil
+---@type Probe|nil
+local contactProbe = nil
 
 local function safeProp(component, key)
   local ok, value = pcall(function()
@@ -116,20 +100,6 @@ local function safeProp(component, key)
     return value
   end
   return nil
-end
-
-local function describeComponent(component)
-  if component == nil then
-    return "nil"
-  end
-  return string.format(
-    "iface=%s static=%s cat=%s dyn=%s type=%s",
-    tostring(component.interfaceID),
-    tostring(component.staticID),
-    tostring(component.categoryID),
-    tostring(component.dynamicID),
-    tostring(component.type)
-  )
 end
 
 local function componentText(component)
@@ -142,20 +112,6 @@ local function componentText(component)
     return stripColours(tostring(label))
   end
   return nil
-end
-
-local function rememberSpellComponent(component)
-  if component == nil then
-    return
-  end
-  spellInterfaceId = component.interfaceID
-  spellStaticId = component.staticID
-  spellCategoryId = component.categoryID
-  spellDynamicId = component.dynamicID
-  PersistentDB:SetInt("spellInterfaceId", spellInterfaceId)
-  PersistentDB:SetInt("spellStaticId", spellStaticId)
-  PersistentDB:SetInt("spellCategoryId", spellCategoryId)
-  PersistentDB:SetInt("spellDynamicId", spellDynamicId)
 end
 
 local function getContactLabelComponent(dyn)
@@ -521,32 +477,6 @@ local function restoreVanillaContactLayout()
   )
 end
 
-local function describeGeom(component, tag)
-  if component == nil then
-    return tostring(tag) .. "=nil"
-  end
-  return string.format(
-    "%s static=%s type=%s size=%sx%s pos=%s,%s scrollable=%s scroll=%sx%s",
-    tostring(tag),
-    tostring(safeProp(component, "staticID")),
-    tostring(safeProp(component, "type")),
-    tostring(safeProp(component, "width")),
-    tostring(safeProp(component, "height")),
-    tostring(safeProp(component, "x")),
-    tostring(safeProp(component, "y")),
-    tostring(safeProp(component, "scrollable")),
-    tostring(safeProp(component, "scrollWidth")),
-    tostring(safeProp(component, "scrollHeight"))
-  )
-end
-
-local function isContactPickerComponent(component)
-  if component == nil then
-    return false
-  end
-  return safeProp(component, "interfaceID") == CONTACT_IFACE
-end
-
 --- GetInterface(88) can be non-nil while the picker is not actually on screen.
 --- Require real geometry + a contact slot before treating it as open.
 local function isContactPickerVisiblyOpen()
@@ -578,59 +508,6 @@ local function isContactPickerVisiblyOpen()
   end
 
   return true
-end
-
-local function dumpDynamicChildren(parent, staticId)
-  local ok, err = pcall(function()
-    parent:IterateDynamicComponents(function(child, visible)
-      logf(
-        "  child static=%s dyn=%s type=%s size=%sx%s pos=%s,%s visible=%s",
-        tostring(staticId),
-        tostring(safeProp(child, "dynamicID")),
-        tostring(safeProp(child, "type")),
-        tostring(safeProp(child, "width")),
-        tostring(safeProp(child, "height")),
-        tostring(safeProp(child, "x")),
-        tostring(safeProp(child, "y")),
-        tostring(visible)
-      )
-      return false
-    end)
-  end)
-  if not ok then
-    logf("  child iterate static=%s failed: %s", tostring(staticId), tostring(err))
-  end
-end
-
-local function dumpContactScaffold()
-  logf("scaffold dump iface=%s:", tostring(CONTACT_IFACE))
-  for staticId = 0, 9 do
-    local ok, component = pcall(function()
-      return ui.Interfaces:GetComponent(CONTACT_IFACE, staticId)
-    end)
-    if ok and component ~= nil then
-      logf("  %s", describeGeom(component, "s" .. tostring(staticId)))
-      local sb = safeProp(component, "scrollbar")
-      logf("  s%s.scrollbar=%s", tostring(staticId), tostring(sb ~= nil))
-      -- Chrome / scrollbar suspects: dump non-contact statics fully; sample 1/2 lightly.
-      if staticId ~= CONTACT_BUTTON_STATIC and staticId ~= CONTACT_LABEL_STATIC then
-        dumpDynamicChildren(component, staticId)
-      end
-    end
-  end
-
-  local sample = getContactLabelComponent(0)
-  local node = sample
-  local depth = 0
-  while node ~= nil and depth < 8 do
-    if not isContactPickerComponent(node) then
-      logf("  labelParent[%d] left iface=%s", depth, tostring(safeProp(node, "interfaceID")))
-      break
-    end
-    logf("  %s", describeGeom(node, "labelParent[" .. tostring(depth) .. "]"))
-    node = safeProp(node, "parent")
-    depth = depth + 1
-  end
 end
 
 --- Pack name labels into a denser grid using the original column X positions.
@@ -1027,7 +904,6 @@ local function applyContactUiExperiment()
   end
 
   captureLayoutBackup()
-  dumpContactScaffold()
   collapseContactLabels()
   alignSpeakToHitboxesToLabels()
   clampContactScrollSize()
@@ -1158,105 +1034,23 @@ local function onLogic()
   end
 end
 
-local function onMiniMenuReady(event)
-  local menu = event.miniMenu
-  if menu == nil or menu.entries == nil then
-    return
-  end
-
-  for _, entry in ipairs(menu.entries) do
-    local component = entry.componentData and entry.componentData.component or nil
-    local subject = entry.subjectText or ""
-    local verb = entry.verbText or ""
-
-    if isNpcContactSubject(subject) or isNpcContactSubject(entry.fullText) then
-      local logKey = "spell|" .. verb .. "|" .. tostring(entry.actionType)
-      if logKey ~= lastMiniMenuLogKey then
-        lastMiniMenuLogKey = logKey
-        logf(
-          "minimenu spell: verb=%q subject=%q type=%s {%s}",
-          verb,
-          stripColours(subject),
-          tostring(entry.actionType),
-          describeComponent(component)
-        )
-      end
-      if component ~= nil and (entry.actionType == ACTION_CAST or entry.actionType == ACTION_REDIAL) then
-        rememberSpellComponent(component)
-      end
-    elseif component ~= nil
-        and component.interfaceID == CONTACT_IFACE
-        and component.staticID == CONTACT_BUTTON_STATIC then
-      local dyn = component.dynamicID
-      local name = getContactLabel(dyn) or "?"
-      local logKey = "contact|" .. tostring(dyn)
-      if logKey ~= lastMiniMenuLogKey then
-        lastMiniMenuLogKey = logKey
-        logf("minimenu contact: dyn=%s name=%s verb=%q", tostring(dyn), name, verb)
-      end
-    end
-  end
-end
-
-local function onMiniMenuSelected(event)
-  local entry = event.entry
-  if entry == nil then
-    return
-  end
-
-  local component = entry.componentData and entry.componentData.component or nil
-
-  if component ~= nil
-      and component.interfaceID == CONTACT_IFACE
-      and component.staticID == CONTACT_BUTTON_STATIC then
-    local dyn = component.dynamicID
-    local name = getContactLabel(dyn) or "?"
-    logf("selected contact: dyn=%s name=%s", tostring(dyn), name)
-    return
-  end
-
-  if not isNpcContactSubject(entry.subjectText) and not isNpcContactSubject(entry.fullText) then
-    return
-  end
-
-  logf(
-    "selected spell: verb=%q type=%s {%s}",
-    entry.verbText or "",
-    tostring(entry.actionType),
-    describeComponent(component)
-  )
-  if component ~= nil then
-    rememberSpellComponent(component)
-  end
-end
-
-local function onKeyDown(event)
-  if not PROBE_ENABLED then
-    return
-  end
-  if event.gameKey ~= PROBE_DUMP_KEY then
-    return
-  end
-
-  logf(
-    "F9: spell=%s/%s/%s/%s contact=%s open=%s",
-    tostring(spellInterfaceId),
-    tostring(spellStaticId),
-    tostring(spellCategoryId),
-    tostring(spellDynamicId),
-    tostring(contactInterfaceId),
-    tostring(contactOpen)
-  )
-
-  if not contactOpen then
-    logf("F9: picker not open — cast NPC Contact first")
-    return
-  end
-
-  refreshContacts()
-  logContactList()
-  applyContactUiExperiment()
-end
+contactProbe = probe.new({
+  log = logger,
+  db = PersistentDB,
+  picker = {
+    isOpen = function()
+      return contactOpen
+    end,
+    refreshContacts = refreshContacts,
+    logContactList = logContactList,
+    applyContactUiExperiment = applyContactUiExperiment,
+    getContactLabel = getContactLabel,
+    getContactLabelComponent = getContactLabelComponent,
+  },
+  contactInterfaceId = CONTACT_IFACE,
+  contactButtonStatic = CONTACT_BUTTON_STATIC,
+  contactLabelStatic = CONTACT_LABEL_STATIC,
+})
 
 unsubscribeHideChatheads = store:subscribe(function(key, value)
   if key ~= settings.HIDE_CHATHEADS then
@@ -1266,19 +1060,23 @@ unsubscribeHideChatheads = store:subscribe(function(key, value)
 end)
 
 Event.Logic.Subscribe(REFS.logic, onLogic)
-Event.MiniMenuReady.Subscribe(REFS.miniMenuReady, onMiniMenuReady)
-Event.MiniMenuEntrySelected.Subscribe(REFS.miniMenuSelected, onMiniMenuSelected)
-Event.KeyDown.Subscribe(REFS.keyDown, onKeyDown)
 Event.SettingsLayerReady.Subscribe(REFS.settingsLayer, onSettingsLayerReady)
 Event.ContentLayerReady.Subscribe(REFS.contentLayer, onContentLayerReady)
+if contactProbe.enabled then
+  Event.MiniMenuReady.Subscribe(REFS.miniMenuReady, contactProbe.onMiniMenuReady)
+  Event.MiniMenuEntrySelected.Subscribe(REFS.miniMenuSelected, contactProbe.onMiniMenuSelected)
+  Event.KeyDown.Subscribe(REFS.keyDown, contactProbe.onKeyDown)
+end
 
 function PluginShutdown()
   Event.Logic.Unsubscribe(REFS.logic)
-  Event.MiniMenuReady.Unsubscribe(REFS.miniMenuReady)
-  Event.MiniMenuEntrySelected.Unsubscribe(REFS.miniMenuSelected)
-  Event.KeyDown.Unsubscribe(REFS.keyDown)
   Event.SettingsLayerReady.Unsubscribe(REFS.settingsLayer)
   Event.ContentLayerReady.Unsubscribe(REFS.contentLayer)
+  if contactProbe ~= nil and contactProbe.enabled then
+    Event.MiniMenuReady.Unsubscribe(REFS.miniMenuReady)
+    Event.MiniMenuEntrySelected.Unsubscribe(REFS.miniMenuSelected)
+    Event.KeyDown.Unsubscribe(REFS.keyDown)
+  end
   if unsubscribeHideChatheads ~= nil then
     unsubscribeHideChatheads()
     unsubscribeHideChatheads = nil
@@ -1294,6 +1092,7 @@ function PluginShutdown()
   logf("shutdown")
 end
 
+local spellIds = contactProbe.spellIds()
 logf(
   "loaded v0.0.22 layout=88/{speak:static1,name:static2} hideChatheads=%s collapse=%s clampScroll=%s hideSb=%s fit=%s spell=%s/%s/%s/%s",
   tostring(store:get(settings.HIDE_CHATHEADS)),
@@ -1301,8 +1100,8 @@ logf(
   tostring(CLAMP_SCROLL_SIZE),
   tostring(HIDE_SCROLLBAR),
   tostring(FIT_WINDOW_TO_CONTENT),
-  tostring(spellInterfaceId),
-  tostring(spellStaticId),
-  tostring(spellCategoryId),
-  tostring(spellDynamicId)
+  tostring(spellIds.interfaceId),
+  tostring(spellIds.staticId),
+  tostring(spellIds.categoryId),
+  tostring(spellIds.dynamicId)
 )
